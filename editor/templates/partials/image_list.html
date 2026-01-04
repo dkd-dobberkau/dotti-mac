@@ -1,0 +1,24 @@
+{% if images %}
+    {% for image in images %}
+        <div class="image-item">
+            <span class="image-name">{{ image.name }}</span>
+            <div class="image-actions">
+                <button hx-post="/load/{{ image.id }}"
+                        hx-target="#pixel-grid"
+                        hx-swap="innerHTML"
+                        class="load-btn">
+                    Laden
+                </button>
+                <button hx-delete="/images/{{ image.id }}"
+                        hx-target="#image-list"
+                        hx-swap="innerHTML"
+                        hx-confirm="Wirklich löschen?"
+                        class="delete-btn">
+                    X
+                </button>
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <p class="no-images">Keine Bilder gespeichert</p>
+{% endif %}

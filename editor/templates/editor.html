@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dotti Pixel Editor</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Dotti Pixel Editor</h1>
+            <span class="status {{ 'connected' if dotti_connected else 'disconnected' }}">
+                {{ 'Dotti verbunden' if dotti_connected else 'Preview Modus' }}
+            </span>
+        </header>
+
+        <main>
+            <section class="editor-section">
+                <div class="toolbar">
+                    <div class="color-palette">
+                        <button type="button" class="color-btn active" style="background:#ff0000" data-color="#ff0000" title="Rot"></button>
+                        <button type="button" class="color-btn" style="background:#00ff00" data-color="#00ff00" title="Grün"></button>
+                        <button type="button" class="color-btn" style="background:#0000ff" data-color="#0000ff" title="Blau"></button>
+                        <button type="button" class="color-btn" style="background:#ffff00" data-color="#ffff00" title="Gelb"></button>
+                        <button type="button" class="color-btn" style="background:#ff00ff" data-color="#ff00ff" title="Magenta"></button>
+                        <button type="button" class="color-btn" style="background:#00ffff" data-color="#00ffff" title="Cyan"></button>
+                        <button type="button" class="color-btn" style="background:#ff8000" data-color="#ff8000" title="Orange"></button>
+                        <button type="button" class="color-btn" style="background:#ffffff" data-color="#ffffff" title="Weiss"></button>
+                        <button type="button" class="color-btn eraser" style="background:#000000" data-color="#000000" title="Schwarz/Radierer"></button>
+                    </div>
+                    <input type="hidden" id="colorPicker" value="#ff0000">
+                    <button hx-post="/random" hx-target="#pixel-grid" hx-swap="innerHTML">
+                        Zufall
+                    </button>
+                    <button hx-post="/clear" hx-target="#pixel-grid" hx-swap="innerHTML">
+                        Leeren
+                    </button>
+                </div>
+
+                <script>
+                    document.querySelectorAll('.color-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                            document.getElementById('colorPicker').value = btn.dataset.color;
+                        });
+                    });
+                </script>
+
+                <div id="pixel-grid" class="pixel-grid">
+                    {% include 'partials/grid.html' %}
+                </div>
+
+                <div class="save-form">
+                    <input type="text" name="name" id="imageName" placeholder="Bildname...">
+                    <button hx-post="/save"
+                            hx-include="#imageName"
+                            hx-target="#image-list"
+                            hx-swap="innerHTML">
+                        Speichern
+                    </button>
+                </div>
+            </section>
+
+            <aside class="sidebar">
+                <div class="slots-section">
+                    <h2>Dotti Slots (schnell!)</h2>
+                    <p class="slots-hint">Bilder auf dem Dotti speichern</p>
+                    <div class="slot-grid">
+                        {% for i in range(8) %}
+                        <div class="slot-item">
+                            <span class="slot-num">{{ i }}</span>
+                            <button class="slot-btn save"
+                                    hx-post="/slot/save/{{ i }}"
+                                    hx-target="#slot-status"
+                                    hx-swap="innerHTML"
+                                    title="In Slot {{ i }} speichern">S</button>
+                            <button class="slot-btn load"
+                                    hx-post="/slot/load/{{ i }}"
+                                    hx-target="#slot-status"
+                                    hx-swap="innerHTML"
+                                    title="Von Slot {{ i }} laden">L</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div id="slot-status"></div>
+                </div>
+
+                <div class="presets-section">
+                    <h2>Emojis</h2>
+                    <div class="preset-grid">
+                        {% for key, preset in presets.items() %}
+                        <button class="preset-btn"
+                                hx-post="/preset/{{ key }}"
+                                hx-target="#pixel-grid"
+                                hx-swap="innerHTML"
+                                title="{{ preset.name }}">
+                            {{ preset.name }}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="saved-section">
+                    <h2>Gespeicherte Bilder</h2>
+                    <div id="image-list">
+                        {% include 'partials/image_list.html' %}
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+</body>
+</html>

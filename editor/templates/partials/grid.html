@@ -1,0 +1,12 @@
+{% for y in range(8) %}
+    {% for x in range(8) %}
+        {% set r, g, b = pixels[y][x] %}
+        {% set hex_color = '#%02x%02x%02x' % (r, g, b) %}
+        <div class="pixel"
+             style="background-color: {{ hex_color }};"
+             data-x="{{ x }}" data-y="{{ y }}"
+             hx-post="/pixel/{{ x }}/{{ y }}"
+             hx-vals="js:{color: document.getElementById('colorPicker').value}"
+             hx-swap="outerHTML"></div>
+    {% endfor %}
+{% endfor %}

@@ -1,0 +1,11 @@
+# Core dependencies
+bleak>=0.21.0
+
+# Optional: For webhook server (CI/CD status indicator)
+aiohttp>=3.8.0
+
+# Optional: For development
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+mypy>=1.0.0
