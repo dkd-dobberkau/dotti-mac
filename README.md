@@ -91,11 +91,70 @@ The Dotti uses Bluetooth Low Energy with:
 | Save Slot | `06 05 [slot]` | Save display to slot (0-7) |
 | Load Slot | `06 06 [slot]` | Load display from slot (0-7) |
 
+## BLE Scanner
+
+A standalone Bluetooth Low Energy scanner with manufacturer identification and Apple device type detection.
+
+### Usage
+
+```bash
+# Basic scan (10 seconds)
+uv run python ble_scanner.py
+
+# Quick scan (5 seconds)
+uv run python ble_scanner.py --timeout 5
+
+# Filter by device name
+uv run python ble_scanner.py --filter Dotti
+
+# Group by manufacturer
+uv run python ble_scanner.py --group
+
+# Sort by name or manufacturer
+uv run python ble_scanner.py --sort name
+uv run python ble_scanner.py --sort manufacturer
+
+# Live mode (show devices as found)
+uv run python ble_scanner.py --live
+
+# Verbose mode (show raw data)
+uv run python ble_scanner.py --verbose
+```
+
+### Features
+
+- **Manufacturer Identification**: Recognizes 290+ Bluetooth SIG registered companies (Apple, Microsoft, Samsung, etc.)
+- **Apple Device Detection**: Decodes Apple Continuity Protocol to identify:
+  - FindMy devices (AirTags) with ownership status
+  - AirPods, Beats, and other audio devices
+  - Apple Watch activity state
+  - AirPlay targets (Apple TV, HomePod)
+  - Handoff, AirDrop, and other services
+- **Sorting & Grouping**: Sort by signal strength (RSSI), name, or manufacturer; group by manufacturer
+- **Signal Strength**: RSSI values in dBm (closer to 0 = stronger signal)
+
+### Example Output
+
+```
+Device: Schlüssel von Olivier
+  Address: 2AEB00BA-8AC1-72CD-E68A-01D2A646311F
+  RSSI: -57 dBm
+  Manufacturer: Apple, Inc. (0x004C)
+  Apple Type: FindMy Device (Owned (maintained))
+
+Device: Unknown
+  Address: 246D70D7-DD70-B196-1180-9B610997FFFA
+  RSSI: -64 dBm
+  Manufacturer: Apple, Inc. (0x004C)
+  Apple Type: Nearby Info - Activity: Watch On Wrist
+```
+
 ## Project Structure
 
 ```
 dotti-mac/
 ├── dotti.py              # Main BLE library
+├── ble_scanner.py        # BLE device scanner
 ├── requirements.txt      # Python dependencies
 ├── editor/
 │   ├── app.py            # FastAPI backend
