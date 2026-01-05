@@ -25,3 +25,4 @@ ENV/
 
 # Environment
 .env
+*.egg-info/

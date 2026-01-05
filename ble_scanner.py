@@ -10,7 +10,7 @@ Usage:
 
 import asyncio
 import argparse
-from bleak import BleakScanner
+from bleak import BleakScanner, BleakClient
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
@@ -353,6 +353,49 @@ FINDMY_STATUS = {
     0x04: "Unknown",
 }
 
+# Well-known GATT Service UUIDs
+# Source: https://www.bluetooth.com/specifications/gatt/services/
+KNOWN_SERVICES = {
+    "00001800-0000-1000-8000-00805f9b34fb": ("Generic Access", "standard"),
+    "00001801-0000-1000-8000-00805f9b34fb": ("Generic Attribute", "standard"),
+    "0000180a-0000-1000-8000-00805f9b34fb": ("Device Information", "info"),
+    "0000180f-0000-1000-8000-00805f9b34fb": ("Battery Service", "info"),
+    "00001802-0000-1000-8000-00805f9b34fb": ("Immediate Alert", "control"),
+    "00001803-0000-1000-8000-00805f9b34fb": ("Link Loss", "control"),
+    "00001804-0000-1000-8000-00805f9b34fb": ("Tx Power", "info"),
+    "00001805-0000-1000-8000-00805f9b34fb": ("Current Time", "info"),
+    "00001806-0000-1000-8000-00805f9b34fb": ("Reference Time", "info"),
+    "00001808-0000-1000-8000-00805f9b34fb": ("Glucose", "health"),
+    "00001809-0000-1000-8000-00805f9b34fb": ("Health Thermometer", "health"),
+    "0000180d-0000-1000-8000-00805f9b34fb": ("Heart Rate", "health"),
+    "0000180e-0000-1000-8000-00805f9b34fb": ("Phone Alert Status", "control"),
+    "00001810-0000-1000-8000-00805f9b34fb": ("Blood Pressure", "health"),
+    "00001812-0000-1000-8000-00805f9b34fb": ("Human Interface Device", "control"),
+    "00001813-0000-1000-8000-00805f9b34fb": ("Scan Parameters", "standard"),
+    "00001814-0000-1000-8000-00805f9b34fb": ("Running Speed and Cadence", "fitness"),
+    "00001816-0000-1000-8000-00805f9b34fb": ("Cycling Speed and Cadence", "fitness"),
+    "00001818-0000-1000-8000-00805f9b34fb": ("Cycling Power", "fitness"),
+    "00001819-0000-1000-8000-00805f9b34fb": ("Location and Navigation", "location"),
+    "0000181a-0000-1000-8000-00805f9b34fb": ("Environmental Sensing", "info"),
+    "0000181c-0000-1000-8000-00805f9b34fb": ("User Data", "personal"),
+    "0000fff0-0000-1000-8000-00805f9b34fb": ("Dotti LED Control", "iot-control"),
+    "0000ffe0-0000-1000-8000-00805f9b34fb": ("Generic IoT Control", "iot-control"),
+    "0000ffc0-0000-1000-8000-00805f9b34fb": ("Generic IoT Data", "iot-control"),
+}
+
+# Characteristic properties that indicate write capability
+WRITE_PROPERTIES = ["write", "write-without-response"]
+READ_PROPERTIES = ["read"]
+NOTIFY_PROPERTIES = ["notify", "indicate"]
+
+# Security assessment
+SECURITY_LEVELS = {
+    "open": "OPEN - No authentication required",
+    "pairing": "PAIRING - Requires device pairing",
+    "encrypted": "ENCRYPTED - Requires encryption",
+    "authenticated": "AUTHENTICATED - Requires authentication",
+}
+
 
 def decode_apple_advertising(data: bytes) -> str:
     """Decode Apple Continuity Protocol advertising data."""
@@ -454,6 +497,212 @@ def get_manufacturer_name(company_id: int) -> str:
     return COMPANY_IDENTIFIERS.get(company_id, f"Unknown (ID: 0x{company_id:04X})")
 
 
+def get_service_name(uuid: str) -> tuple[str, str]:
+    """Get service name and category from UUID."""
+    uuid_lower = uuid.lower()
+    if uuid_lower in KNOWN_SERVICES:
+        return KNOWN_SERVICES[uuid_lower]
+    # Check for short UUID format (16-bit)
+    if len(uuid) == 4:
+        full_uuid = f"0000{uuid.lower()}-0000-1000-8000-00805f9b34fb"
+        if full_uuid in KNOWN_SERVICES:
+            return KNOWN_SERVICES[full_uuid]
+    return ("Unknown Service", "unknown")
+
+
+async def probe_device(address: str, name: str, timeout: float = 5.0) -> dict:
+    """
+    Connect to a device and probe its services/characteristics.
+
+    Returns a dict with:
+    - connected: bool
+    - services: list of service info
+    - security_assessment: str
+    - writable_chars: list of writable characteristics
+    """
+    result = {
+        "address": address,
+        "name": name,
+        "connected": False,
+        "error": None,
+        "services": [],
+        "writable_chars": [],
+        "readable_chars": [],
+        "security_assessment": "unknown",
+    }
+
+    try:
+        async with BleakClient(address, timeout=timeout) as client:
+            result["connected"] = True
+
+            has_open_write = False
+            has_sensitive_data = False
+            has_protected_chars = False
+
+            for service in client.services:
+                service_uuid = str(service.uuid).lower()
+                service_name, category = get_service_name(service_uuid)
+
+                service_info = {
+                    "uuid": service_uuid,
+                    "name": service_name,
+                    "category": category,
+                    "characteristics": []
+                }
+
+                for char in service.characteristics:
+                    props = [p.lower() for p in char.properties]
+
+                    char_info = {
+                        "uuid": str(char.uuid),
+                        "properties": props,
+                        "readable": any(p in props for p in READ_PROPERTIES),
+                        "writable": any(p in props for p in WRITE_PROPERTIES),
+                        "notifiable": any(p in props for p in NOTIFY_PROPERTIES),
+                    }
+
+                    # Try to read if readable
+                    if char_info["readable"]:
+                        try:
+                            value = await client.read_gatt_char(char.uuid)
+                            char_info["value"] = value.hex()
+                            # Try to decode as string
+                            try:
+                                decoded = value.decode('utf-8').strip('\x00')
+                                if decoded.isprintable() and len(decoded) > 0:
+                                    char_info["value_str"] = decoded
+                            except:
+                                pass
+                        except Exception as e:
+                            error_str = str(e)
+                            char_info["read_error"] = error_str
+                            # Check if protected by encryption/authentication
+                            if "encryption" in error_str.lower() or "authentication" in error_str.lower():
+                                has_protected_chars = True
+
+                    service_info["characteristics"].append(char_info)
+
+                    # Track writable characteristics
+                    if char_info["writable"]:
+                        has_open_write = True
+                        result["writable_chars"].append({
+                            "service": service_name,
+                            "uuid": str(char.uuid),
+                            "properties": props,
+                        })
+
+                    if char_info["readable"]:
+                        result["readable_chars"].append({
+                            "service": service_name,
+                            "uuid": str(char.uuid),
+                            "value": char_info.get("value_str") or char_info.get("value"),
+                        })
+
+                # Check for sensitive categories
+                if category in ["health", "personal", "location", "iot-control"]:
+                    has_sensitive_data = True
+
+                result["services"].append(service_info)
+
+            # Security assessment
+            if has_protected_chars:
+                if has_open_write:
+                    result["security_assessment"] = "MIXED - Some data protected, but has open write access"
+                else:
+                    result["security_assessment"] = "PROTECTED - Sensitive data requires encryption/pairing"
+            elif has_open_write and has_sensitive_data:
+                result["security_assessment"] = "VULNERABLE - Open write access to sensitive services"
+            elif has_open_write:
+                result["security_assessment"] = "OPEN - Writable without authentication"
+            elif has_sensitive_data:
+                result["security_assessment"] = "READABLE - Sensitive data accessible"
+            else:
+                result["security_assessment"] = "STANDARD - Basic services only"
+
+    except asyncio.TimeoutError:
+        result["error"] = "Connection timeout"
+    except Exception as e:
+        error_msg = str(e)
+        if "pairing" in error_msg.lower() or "authentication" in error_msg.lower():
+            result["security_assessment"] = "PROTECTED - Requires pairing/authentication"
+            result["error"] = "Requires pairing"
+        elif "not found" in error_msg.lower():
+            result["error"] = "Device not found"
+        else:
+            result["error"] = error_msg
+
+    return result
+
+
+def print_probe_result(result: dict):
+    """Print the probe result in a readable format."""
+    print("=" * 70)
+    print(f" DEVICE: {result['name']}")
+    print(f" Address: {result['address']}")
+    print("=" * 70)
+
+    if not result["connected"]:
+        print(f"  Connection: FAILED - {result['error']}")
+        if result["security_assessment"] != "unknown":
+            print(f"  Security: {result['security_assessment']}")
+        print()
+        return
+
+    print(f"  Connection: SUCCESS")
+    print(f"  Security: {result['security_assessment']}")
+    print()
+
+    # Show services
+    print("  SERVICES:")
+    for service in result["services"]:
+        category_icon = {
+            "standard": " ",
+            "info": "i",
+            "control": "!",
+            "health": "+",
+            "personal": "*",
+            "location": "@",
+            "fitness": "~",
+            "iot-control": "!",
+            "unknown": "?",
+        }.get(service["category"], "?")
+
+        print(f"    [{category_icon}] {service['name']}")
+        print(f"        UUID: {service['uuid']}")
+
+        for char in service["characteristics"]:
+            props_str = ", ".join(char["properties"])
+            access = []
+            if char["readable"]:
+                access.append("R")
+            if char["writable"]:
+                access.append("W")
+            if char["notifiable"]:
+                access.append("N")
+            access_str = "".join(access) or "-"
+
+            print(f"          Char [{access_str}]: {char['uuid'][:8]}... ({props_str})")
+
+            if "value_str" in char:
+                print(f"                 Value: \"{char['value_str']}\"")
+            elif "value" in char:
+                val = char["value"]
+                if len(val) > 32:
+                    val = val[:32] + "..."
+                print(f"                 Value: 0x{val}")
+            elif "read_error" in char:
+                print(f"                 Read error: {char['read_error']}")
+
+    # Summary of writable characteristics
+    if result["writable_chars"]:
+        print()
+        print("  WRITABLE CHARACTERISTICS (potential attack surface):")
+        for char in result["writable_chars"]:
+            print(f"    - {char['service']}: {char['uuid'][:8]}...")
+
+    print()
+
+
 def device_callback(device: BLEDevice, advertisement_data: AdvertisementData):
     """Callback for each discovered device (live scanning)."""
     name = device.name or "Unknown"
@@ -506,7 +755,9 @@ async def scan_devices(
     live: bool = False,
     sort_by: str = "rssi",
     group_by_manufacturer: bool = False,
-    verbose: bool = False
+    verbose: bool = False,
+    probe: bool = False,
+    probe_timeout: float = 5.0,
 ):
     """
     Scan for BLE devices.
@@ -518,6 +769,8 @@ async def scan_devices(
         sort_by: Sort by 'rssi', 'name', or 'manufacturer'
         group_by_manufacturer: If True, group devices by manufacturer
         verbose: If True, show raw manufacturer data
+        probe: If True, connect to devices and analyze their services
+        probe_timeout: Timeout for each probe connection
     """
     print(f"Scanning for BLE devices ({timeout} seconds)...")
     print("-" * 60)
@@ -590,6 +843,18 @@ async def scan_devices(
         for address, device, adv_data in device_list:
             print_device(address, device, adv_data, verbose)
 
+    # Probe mode - connect to devices and analyze services
+    if probe and device_list:
+        print("\n" + "=" * 70)
+        print(" PROBE MODE - Connecting to devices to analyze security...")
+        print("=" * 70 + "\n")
+
+        for address, device, adv_data in device_list:
+            name = device.name or "Unknown"
+            print(f"Probing {name}...")
+            result = await probe_device(address, name, timeout=probe_timeout)
+            print_probe_result(result)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Scan for BLE devices")
@@ -627,6 +892,17 @@ def main():
         action="store_true",
         help="Show raw manufacturer data"
     )
+    parser.add_argument(
+        "--probe", "-p",
+        action="store_true",
+        help="Connect to devices and analyze their services/security"
+    )
+    parser.add_argument(
+        "--probe-timeout",
+        type=float,
+        default=5.0,
+        help="Timeout for each probe connection (default: 5s)"
+    )
 
     args = parser.parse_args()
 
@@ -636,7 +912,9 @@ def main():
         live=args.live,
         sort_by=args.sort,
         group_by_manufacturer=args.group,
-        verbose=args.verbose
+        verbose=args.verbose,
+        probe=args.probe,
+        probe_timeout=args.probe_timeout,
     ))
 
 
