@@ -119,6 +119,15 @@ uv run python ble_scanner.py --live
 
 # Verbose mode (show raw data)
 uv run python ble_scanner.py --verbose
+
+# Probe mode - connect and analyze security
+uv run python ble_scanner.py --probe
+
+# Probe specific devices
+uv run python ble_scanner.py --filter Dotti --probe
+
+# Probe with longer timeout
+uv run python ble_scanner.py --probe --probe-timeout 10
 ```
 
 ### Features
@@ -132,6 +141,21 @@ uv run python ble_scanner.py --verbose
   - Handoff, AirDrop, and other services
 - **Sorting & Grouping**: Sort by signal strength (RSSI), name, or manufacturer; group by manufacturer
 - **Signal Strength**: RSSI values in dBm (closer to 0 = stronger signal)
+- **Security Probe Mode**: Connect to devices and analyze their services/characteristics:
+  - Enumerate all GATT services and characteristics
+  - Read accessible values (device info, battery level, etc.)
+  - Identify writable characteristics (potential attack surface)
+  - Security assessment: VULNERABLE, OPEN, MIXED, PROTECTED, STANDARD
+
+### Security Assessment Levels
+
+| Level | Description |
+|-------|-------------|
+| VULNERABLE | Open write access to sensitive services (IoT control, health data) |
+| OPEN | Writable characteristics without authentication |
+| MIXED | Some data protected, but has open write channels |
+| PROTECTED | Sensitive data requires encryption/pairing |
+| STANDARD | Only basic services exposed |
 
 ### Example Output
 
@@ -147,6 +171,30 @@ Device: Unknown
   RSSI: -64 dBm
   Manufacturer: Apple, Inc. (0x004C)
   Apple Type: Nearby Info - Activity: Watch On Wrist
+```
+
+### Probe Output Example
+
+```
+======================================================================
+ DEVICE: Dotti
+ Address: 0584E5E3-D5E6-90EF-8CAC-E34F1F49FF7F
+======================================================================
+  Connection: SUCCESS
+  Security: VULNERABLE - Open write access to sensitive services
+
+  SERVICES:
+    [i] Device Information
+        UUID: 0000180a-0000-1000-8000-00805f9b34fb
+          Char [R]: 00002a29... (read)
+                 Value: "Witti"
+    [!] Dotti LED Control
+        UUID: 0000fff0-0000-1000-8000-00805f9b34fb
+          Char [W]: 0000fff3... (write)
+          Char [N]: 0000fff4... (notify)
+
+  WRITABLE CHARACTERISTICS (potential attack surface):
+    - Dotti LED Control: 0000fff3...
 ```
 
 ## Project Structure
